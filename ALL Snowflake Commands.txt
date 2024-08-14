@@ -1,0 +1,136 @@
+use role accountadmin;
+
+
+-------------------------------------------------------------------Clone
+select * from TEST_210724;
+
+create table TEST_210724_clone clone TEST_210724;
+
+select * from TEST_210724_clone;
+
+select get_ddl('table','TEST_210724');
+
+insert into TEST_210724_clone values('6','Avnish_1');
+
+select * from TEST_210724 at (offset => -60*30)
+
+select CURRENT_VERSION();
+
+
+------------------------------------------------------------------TimeTravel/Failsafe
+create or replace table test_02days_timetravel
+(id number(10),
+name varchar(10)
+)
+data_retention_time_in_days=2
+;
+
+alter table test_02days_timetravel set data_retention_time_in_days=10;
+
+show tables like 'test_02days_timetravel';
+
+select * from dev_stg.information_schema.tables where lower(table_name)='test_02days_timetravel';
+
+
+----------------------------------------------transient
+
+create or replace transient table test_02days_timetravel_trans
+(id number(10),
+name varchar(10)
+)
+data_retention_time_in_days=1
+;
+
+show tables like 'test_02days_timetravel_trans';
+
+select * from dev_stg.information_schema.tables where lower(table_name)='test_02days_timetravel_trans';
+-----------------------------------------------------------
+create or replace temporary table test_02days_timetravel_temp
+(id number(10),
+name varchar(10)
+)
+data_retention_time_in_days=2
+;
+
+
+show tables like 'test_02days_timetravel_temp';
+select * from test_02days_timetravel_temp;
+
+select * from dev_stg.information_schema.tables where lower(table_name)='test_02days_timetravel_temp';
+
+select TOP 2* from dev_stg.information_schema.tables where TABLE_TYPE='LOCAL TEMPORARY';
+
+-----------
+//drop table test_02days_timetravel_trans;
+//drop table test_02days_timetravel_temp;
+//drop table test_02days_timetravel;
+
+-------------------------------------------------------------------------------Stream
+NOte- Can create on any tables like main table/transient/temp/external
+select * from TEST_210724;
+
+create or replace stream TEST_210724_stream_append on table TEST_210724 append_only=true;
+create or replace stream TEST_210724_stream on table TEST_210724;
+create or replace stream TEST_210724_stream_external on external table TEST_210724 insert_only=true;
+
+
+select * from TEST_210724_stream_append;
+
+select * from  TEST_210724_stream;
+
+delete from TEST_210724 where id=1;
+
+insert into TEST_210724 values(1,'Priti');
+
+update TEST_210724 set name='AAA' where id=3;
+
+-------
+
+//drop stream TEST_210724_stream_append;
+//drop stream TEST_210724_stream;
+
+-----------------------------------------------------------Masking Policy--------------------------
+use role sysadmin;
+select * from TEST_210724;
+
+select t1.value:account_country::string as account_country,
+t1.value:account_id::string as account_id
+
+ from DEV_STG.STG_MAGENTO.ORDERS,
+ TABLE(flatten(value:items)) t1
+
+
+--  Data Masking
+CREATE or replace MASKING POLICY simple_masking_policy AS (NAME string)
+returns string ->
+case when current_role() in ('ACCOUNTADMIN') THEN NAME
+else 
+'**** Masked ***'
+end;
+
+
+
+-- External Tokenization
+
+CREATE MASKING POLICY un_masking_policy AS (Avi_text string)
+returns string -> 
+ssn_unprotect(VAL)
+;
+
+
+desc masking policy simple_masking_policy ;
+desc masking policy un_masking_policy ;
+
+alter table TEST_210724 modify column NAME
+set masking policy simple_masking_policy;
+
+alter table TEST_210724 modify column NAME
+unset masking policy ;
+
+
+
+select * from TEST_210724;
+
+select * from table(information_schema.POLICY_REFERENCES(POLICY_NAME => 'simple_masking_policy'));
+
+select * from table(information_schema.policy_references(ref_entity_name => 'DEV_STG.STG_GAINSIGHT.TEST_210724', ref_entity_domain => 'table'))
